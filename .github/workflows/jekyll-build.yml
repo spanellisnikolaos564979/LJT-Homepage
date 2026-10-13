@@ -69,7 +69,11 @@ jobs:
           end
           raise "Incorrect canonical URL" unless home.at_css("link[rel=canonical]")["href"] == "https://spanellisnikolaos564979.github.io/LJT-Homepage/"
           home.css("link[rel=stylesheet]").each do |stylesheet|
+            next if stylesheet["href"].start_with?("https://")
             raise "Stylesheet ignores the repository base path" unless stylesheet["href"].include?("/LJT-Homepage/assets/")
+          end
+          home.css("link[rel=icon]").each do |icon|
+            raise "Icon ignores the repository base path" unless icon["href"].start_with?("/LJT-Homepage/images/")
           end
 
           puts "Verified the homepage, publications page, six complete publication records, and asset URLs."
