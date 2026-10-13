@@ -35,6 +35,7 @@ jobs:
           bundle exec ruby <<'RUBY'
           require "nokogiri"
           require "yaml"
+          require "uri"
 
           publications = Dir.glob("_publications/*.md").map do |file|
             YAML.safe_load(File.read(file).split(/^---\s*$\n?/, 3)[1])
@@ -68,12 +69,18 @@ jobs:
             raise "Missing personal detail: #{detail}" unless home_text.include?(detail)
           end
           raise "Incorrect canonical URL" unless home.at_css("link[rel=canonical]")["href"] == "https://spanellisnikolaos564979.github.io/LJT-Homepage/"
+
+          validate_asset = ->(href, folder) {
+            uri = URI.parse(href)
+            valid_host = uri.host.nil? || uri.host == "spanellisnikolaos564979.github.io"
+            raise "Incorrect asset URL: #{href}" unless valid_host && uri.path.start_with?("/LJT-Homepage/#{folder}/")
+          }
           home.css("link[rel=stylesheet]").each do |stylesheet|
-            next if stylesheet["href"].start_with?("https://")
-            raise "Stylesheet ignores the repository base path" unless stylesheet["href"].include?("/LJT-Homepage/assets/")
+            next if stylesheet["href"].start_with?("https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/")
+            validate_asset.call(stylesheet["href"], "assets")
           end
           home.css("link[rel=icon]").each do |icon|
-            raise "Icon ignores the repository base path" unless icon["href"].start_with?("/LJT-Homepage/images/")
+            validate_asset.call(icon["href"], "images")
           end
 
           puts "Verified the homepage, publications page, six complete publication records, and asset URLs."
