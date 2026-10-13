@@ -1,13 +1,10 @@
 name: Jekyll build
 
 on:
-  # Run after bad-pr check
-  workflow_run:
-    workflows: ["Cleanup bad PR"]
-    branches: [main]
-    types:
-      - completed
-      
+  push:
+    branches: [master]
+  workflow_dispatch:
+
 permissions:
   contents: read
 
@@ -32,3 +29,48 @@ jobs:
         run: bundle exec jekyll build --strict_front_matter
         env:
           JEKYLL_ENV: production
+
+      - name: Verify homepage and publications
+        run: |
+          bundle exec ruby <<'RUBY'
+          require "nokogiri"
+          require "yaml"
+
+          publications = Dir.glob("_publications/*.md").map do |file|
+            YAML.safe_load(File.read(file).split(/^---\s*$\n?/, 3)[1])
+          end
+          raise "Expected six publications" unless publications.size == 6
+
+          expected_pages = ["index.html", "publications/index.html"]
+          actual_pages = Dir.glob("_site/**/*.html").map { |file| file.delete_prefix("_site/") }.sort
+          raise "Unexpected pages: #{actual_pages.inspect}" unless actual_pages == expected_pages
+
+          home = Nokogiri::HTML(File.read("_site/index.html"))
+          publications_page = Nokogiri::HTML(File.read("_site/publications/index.html"))
+          normalize = ->(text) { text.gsub(/\s+/, " ").strip }
+          home_text = normalize.call(home.at_css(".page__content").text)
+          archive_text = normalize.call(publications_page.at_css(".archive").text)
+
+          ["About Me", "Education", "Research Experience", "Research Interests and Skills", "Publications", "Honors", "Contact"].each do |section|
+            raise "Missing homepage section: #{section}" unless home_text.include?(section)
+          end
+
+          publications.each do |publication|
+            [home_text, archive_text].each do |text|
+              raise "Missing publication: #{publication.fetch('title')}" unless text.include?(publication.fetch('title'))
+              raise "Missing authors: #{publication.fetch('title')}" unless text.include?(publication.fetch('authors').join(", "))
+              raise "Missing venue or year: #{publication.fetch('title')}" unless text.include?(publication.fetch('venue')) && text.include?(publication.fetch('publication_year').to_s)
+            end
+          end
+          raise "Unexpected number of publication entries" unless publications_page.css(".archive__item").size == 6
+
+          ["jliugi@connect.ust.hk", "Vicent0205", "@junteng88716710", "Zhiyuan Honor Scholarship"].each do |detail|
+            raise "Missing personal detail: #{detail}" unless home_text.include?(detail)
+          end
+          raise "Incorrect canonical URL" unless home.at_css("link[rel=canonical]")["href"] == "https://spanellisnikolaos564979.github.io/LJT-Homepage/"
+          home.css("link[rel=stylesheet]").each do |stylesheet|
+            raise "Stylesheet ignores the repository base path" unless stylesheet["href"].include?("/LJT-Homepage/assets/")
+          end
+
+          puts "Verified the homepage, publications page, six complete publication records, and asset URLs."
+          RUBY
